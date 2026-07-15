@@ -5,7 +5,7 @@
   "main": "dist/backend/src/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc && cd ../frontend && npm install && npm run build",
+    "build": "tsc",
     "start": "node dist/backend/src/index.js",
     "postinstall": "npx playwright install chromium --with-deps",
     "db:setup": "ts-node src/database/setup-db.ts",
