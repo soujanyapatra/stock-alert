@@ -4,20 +4,43 @@ import { providerRegistry } from '../providers/registry';
 import { logger } from '../utils/logger';
 import { Product, HistoryEntry } from '../../../shared/types';
 
-export const getProductDetails = (req: Request, res: Response) => {
+// Helpers to format lowercase PG column names to camelCase typescript types
+const formatProduct = (row: any): Product => ({
+  id: row.id,
+  asin: row.asin,
+  url: row.url,
+  name: row.name,
+  image: row.image,
+  currentPrice: Number(row.currentprice),
+  stockStatus: row.stockstatus,
+  lastChecked: row.lastchecked,
+});
+
+const formatHistoryEntry = (row: any): HistoryEntry => ({
+  id: row.id,
+  productId: row.productid,
+  price: Number(row.price),
+  stockStatus: row.stockstatus,
+  checkedAt: row.checkedat,
+});
+
+export const getProductDetails = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as Product | undefined;
-    if (!product) {
+    const productResult = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+    if (productResult.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const history = db.prepare(`
-      SELECT * FROM history 
-      WHERE productId = ? 
-      ORDER BY checkedAt DESC
-    `).all(id) as HistoryEntry[];
+    const product = formatProduct(productResult.rows[0]);
+
+    const historyResult = await db.query(
+      'SELECT * FROM history WHERE productid = ? ORDER BY checkedat DESC',
+      [id]
+    );
+
+    const history = historyResult.rows.map(formatHistoryEntry);
 
     res.json({
       product,

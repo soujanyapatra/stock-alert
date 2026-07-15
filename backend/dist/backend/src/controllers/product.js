@@ -7,18 +7,34 @@ exports.checkProduct = exports.getProductDetails = void 0;
 const db_1 = __importDefault(require("../database/db"));
 const registry_1 = require("../providers/registry");
 const logger_1 = require("../utils/logger");
-const getProductDetails = (req, res) => {
+// Helpers to format lowercase PG column names to camelCase typescript types
+const formatProduct = (row) => ({
+    id: row.id,
+    asin: row.asin,
+    url: row.url,
+    name: row.name,
+    image: row.image,
+    currentPrice: Number(row.currentprice),
+    stockStatus: row.stockstatus,
+    lastChecked: row.lastchecked,
+});
+const formatHistoryEntry = (row) => ({
+    id: row.id,
+    productId: row.productid,
+    price: Number(row.price),
+    stockStatus: row.stockstatus,
+    checkedAt: row.checkedat,
+});
+const getProductDetails = async (req, res) => {
     const { id } = req.params;
     try {
-        const product = db_1.default.prepare('SELECT * FROM products WHERE id = ?').get(id);
-        if (!product) {
+        const productResult = await db_1.default.query('SELECT * FROM products WHERE id = ?', [id]);
+        if (productResult.rows.length === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
-        const history = db_1.default.prepare(`
-      SELECT * FROM history 
-      WHERE productId = ? 
-      ORDER BY checkedAt DESC
-    `).all(id);
+        const product = formatProduct(productResult.rows[0]);
+        const historyResult = await db_1.default.query('SELECT * FROM history WHERE productid = ? ORDER BY checkedat DESC', [id]);
+        const history = historyResult.rows.map(formatHistoryEntry);
         res.json({
             product,
             history

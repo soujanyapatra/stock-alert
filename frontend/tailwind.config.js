@@ -8,27 +8,25 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Single brand accent — electric violet, used ONLY on interactive UI elements
         primary: {
-          50: '#f4f6fe',
-          100: '#e9edfd',
-          200: '#d7dffc',
-          300: '#b8c6f9',
-          400: '#91a5f4',
-          500: '#637bed',
-          600: '#485ee2',
-          700: '#384ac9',
-          800: '#323fa4',
-          900: '#2b3684',
-          950: '#1b2053',
+          50:  '#faf5ff',
+          100: '#f3e8ff',
+          200: '#e9d5ff',
+          300: '#d8b4fe',
+          400: '#c084fc',
+          500: '#a855f7',
+          600: '#9333ea',
+          700: '#7e22ce',
+          800: '#6b21a8',
+          900: '#581c87',
+          950: '#3b0764',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Outfit', 'system-ui', 'sans-serif'],
       },
-      boxShadow: {
-        'premium': '0 10px 30px -10px rgba(0, 0, 0, 0.1), 0 1px 1px 0 rgba(0, 0, 0, 0.05)',
-        'premium-dark': '0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 1px 1px 0 rgba(255, 255, 255, 0.05)',
-      }
     },
   },
   plugins: [],

@@ -4,35 +4,46 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteAlert = exports.updateAlert = exports.createAlert = exports.getAlerts = void 0;
+const crypto_1 = require("crypto");
 const db_1 = __importDefault(require("../database/db"));
 const registry_1 = require("../providers/registry");
 const logger_1 = require("../utils/logger");
-const getAlerts = (req, res) => {
+// Helper to format lowercase DB column names to camelCase typescript types
+const formatProduct = (row) => ({
+    id: row.id,
+    asin: row.asin,
+    url: row.url,
+    name: row.name,
+    image: row.image,
+    currentPrice: Number(row.currentprice),
+    stockStatus: row.stockstatus,
+    lastChecked: row.lastchecked,
+});
+const getAlerts = async (req, res) => {
     try {
-        const alerts = db_1.default.prepare(`
+        const result = await db_1.default.query(`
       SELECT 
-        a.id as alertId, a.customName, a.enabled, a.createdAt,
-        p.id as productId, p.asin, p.url, p.name, p.image, p.currentPrice, p.stockStatus, p.lastChecked
+        a.id as alertid, a.customname, a.enabled, a.createdat,
+        p.id as productid, p.asin, p.url, p.name, p.image, p.currentprice, p.stockstatus, p.lastchecked
       FROM alerts a
-      JOIN products p ON a.productId = p.id
-      ORDER BY a.createdAt DESC
-    `).all();
-        // Format output to match frontend interface
-        const formattedAlerts = alerts.map((row) => ({
-            id: row.alertId,
-            productId: row.productId,
-            customName: row.customName || undefined,
+      JOIN products p ON a.productid = p.id
+      ORDER BY a.createdat DESC
+    `);
+        const formattedAlerts = result.rows.map((row) => ({
+            id: row.alertid,
+            productId: row.productid,
+            customName: row.customname || undefined,
             enabled: row.enabled === 1,
-            createdAt: row.createdAt,
+            createdAt: row.createdat,
             product: {
-                id: row.productId,
+                id: row.productid,
                 asin: row.asin,
                 url: row.url,
                 name: row.name,
                 image: row.image,
-                currentPrice: row.currentPrice,
-                stockStatus: row.stockStatus,
-                lastChecked: row.lastChecked,
+                currentPrice: Number(row.currentprice),
+                stockStatus: row.stockstatus,
+                lastChecked: row.lastchecked,
             },
         }));
         res.json(formattedAlerts);
@@ -58,11 +69,12 @@ const createAlert = async (req, res) => {
     }
     try {
         // 1. Check if product already exists
-        let product = db_1.default.prepare('SELECT * FROM products WHERE asin = ?').get(asin);
+        const productResult = await db_1.default.query('SELECT * FROM products WHERE asin = ?', [asin]);
+        let product = productResult.rows[0] ? formatProduct(productResult.rows[0]) : undefined;
         if (product) {
             // Check if an alert already exists for this product
-            const existingAlert = db_1.default.prepare('SELECT * FROM alerts WHERE productId = ?').get(product.id);
-            if (existingAlert) {
+            const existingAlertResult = await db_1.default.query('SELECT * FROM alerts WHERE productid = ?', [product.id]);
+            if (existingAlertResult.rows.length > 0) {
                 return res.status(400).json({ error: 'An alert for this product already exists.' });
             }
         }
@@ -71,32 +83,40 @@ const createAlert = async (req, res) => {
             logger_1.logger.info(`Scraping new product for ASIN: ${asin}`);
             const scraped = await provider.fetchProduct(url);
             const timestamp = new Date().toISOString();
-            // Save product and its first history entry in a transaction
-            const createProductTx = db_1.default.transaction(() => {
-                const stmt = db_1.default.prepare(`
-          INSERT INTO products (asin, url, name, image, currentPrice, stockStatus, lastChecked)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-                const result = stmt.run(asin, scraped.url, scraped.name, scraped.image, scraped.currentPrice, scraped.stockStatus, timestamp);
-                const productId = result.lastInsertRowid;
+            const productId = (0, crypto_1.randomUUID)();
+            const historyId = (0, crypto_1.randomUUID)();
+            // Save product and its first history entry inside a MySQL transaction
+            const connection = await db_1.default.pool.getConnection();
+            try {
+                await connection.beginTransaction();
+                await connection.query(`
+          INSERT INTO products (id, asin, url, name, image, currentprice, stockstatus, lastchecked)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [productId, asin, scraped.url, scraped.name, scraped.image, scraped.currentPrice, scraped.stockStatus, timestamp]);
                 // Insert first history entry
-                db_1.default.prepare(`
-          INSERT INTO history (productId, price, stockStatus, checkedAt)
-          VALUES (?, ?, ?, ?)
-        `).run(productId, scraped.currentPrice, scraped.stockStatus, timestamp);
-                return productId;
-            });
-            const newProductId = createProductTx();
-            product = db_1.default.prepare('SELECT * FROM products WHERE id = ?').get(newProductId);
+                await connection.query(`
+          INSERT INTO history (id, productid, price, stockstatus, checkedat)
+          VALUES (?, ?, ?, ?, ?)
+        `, [historyId, productId, scraped.currentPrice, scraped.stockStatus, timestamp]);
+                await connection.commit();
+            }
+            catch (txErr) {
+                await connection.rollback();
+                throw txErr;
+            }
+            finally {
+                connection.release();
+            }
+            const prodResult = await db_1.default.query('SELECT * FROM products WHERE id = ?', [productId]);
+            product = formatProduct(prodResult.rows[0]);
         }
         // 3. Create the alert
         const createdAt = new Date().toISOString();
-        const insertAlertStmt = db_1.default.prepare(`
-      INSERT INTO alerts (productId, customName, enabled, createdAt)
-      VALUES (?, ?, ?, ?)
-    `);
-        const result = insertAlertStmt.run(product.id, customName || null, 1, createdAt);
-        const alertId = result.lastInsertRowid;
+        const alertId = (0, crypto_1.randomUUID)();
+        await db_1.default.query(`
+      INSERT INTO alerts (id, productid, customname, enabled, createdat)
+      VALUES (?, ?, ?, ?, ?)
+    `, [alertId, product.id, customName || null, 1, createdAt]);
         const formattedAlert = {
             id: alertId,
             productId: product.id,
@@ -114,12 +134,12 @@ const createAlert = async (req, res) => {
     }
 };
 exports.createAlert = createAlert;
-const updateAlert = (req, res) => {
+const updateAlert = async (req, res) => {
     const { id } = req.params;
     const { enabled, customName } = req.body;
     try {
-        const alert = db_1.default.prepare('SELECT * FROM alerts WHERE id = ?').get(id);
-        if (!alert) {
+        const alertResult = await db_1.default.query('SELECT * FROM alerts WHERE id = ?', [id]);
+        if (alertResult.rows.length === 0) {
             return res.status(404).json({ error: 'Alert not found' });
         }
         let updateFields = [];
@@ -129,42 +149,44 @@ const updateAlert = (req, res) => {
             params.push(enabled ? 1 : 0);
         }
         if (customName !== undefined) {
-            updateFields.push('customName = ?');
+            updateFields.push('customname = ?');
             params.push(customName || null);
         }
         if (updateFields.length === 0) {
             return res.status(400).json({ error: 'No fields provided to update' });
         }
         params.push(id);
-        db_1.default.prepare(`
+        const queryText = `
       UPDATE alerts
       SET ${updateFields.join(', ')}
       WHERE id = ?
-    `).run(...params);
+    `;
+        await db_1.default.query(queryText, params);
         // Retrieve updated alert
-        const updatedRow = db_1.default.prepare(`
+        const updatedResult = await db_1.default.query(`
       SELECT 
-        a.id as alertId, a.customName, a.enabled, a.createdAt,
-        p.id as productId, p.asin, p.url, p.name, p.image, p.currentPrice, p.stockStatus, p.lastChecked
+        a.id as alertid, a.customname, a.enabled, a.createdat,
+        p.id as productid, p.asin, p.url, p.name, p.image, p.currentprice, p.stockstatus, p.lastchecked
       FROM alerts a
-      JOIN products p ON a.productId = p.id
+      JOIN products p ON a.productid = p.id
       WHERE a.id = ?
-    `).get(id);
+    `, [id]);
+        const row = updatedResult.rows[0];
         const formattedAlert = {
-            id: updatedRow.alertId,
-            productId: updatedRow.productId,
-            customName: updatedRow.customName || undefined,
-            enabled: updatedRow.enabled === 1,
-            createdAt: updatedRow.createdAt,
+            id: row.alertid,
+            productId: row.productid,
+            customName: row.customname || undefined,
+            enabled: row.enabled === 1,
+            createdAt: row.createdat,
             product: {
-                id: updatedRow.productId,
-                asin: updatedRow.asin,
-                url: updatedRow.url,
-                name: updatedRow.name,
-                image: updatedRow.image,
-                currentPrice: updatedRow.currentPrice,
-                stockStatus: updatedRow.stockStatus,
-                lastChecked: updatedRow.lastChecked,
+                id: row.productid,
+                asin: row.asin,
+                url: row.url,
+                name: row.name,
+                image: row.image,
+                currentPrice: Number(row.currentprice),
+                stockStatus: row.stockstatus,
+                lastChecked: row.lastchecked,
             }
         };
         res.json(formattedAlert);
@@ -175,26 +197,37 @@ const updateAlert = (req, res) => {
     }
 };
 exports.updateAlert = updateAlert;
-const deleteAlert = (req, res) => {
+const deleteAlert = async (req, res) => {
     const { id } = req.params;
     try {
-        const alert = db_1.default.prepare('SELECT * FROM alerts WHERE id = ?').get(id);
-        if (!alert) {
+        const alertResult = await db_1.default.query('SELECT * FROM alerts WHERE id = ?', [id]);
+        if (alertResult.rows.length === 0) {
             return res.status(404).json({ error: 'Alert not found' });
         }
-        const productId = alert.productId;
-        // Delete alert and then check if the product has other alerts. If none, delete the product.
-        const deleteTx = db_1.default.transaction(() => {
+        const alert = alertResult.rows[0];
+        const productId = alert.productid;
+        // Delete alert and orphaned product inside a MySQL transaction
+        const connection = await db_1.default.pool.getConnection();
+        try {
+            await connection.beginTransaction();
             // 1. Delete the alert
-            db_1.default.prepare('DELETE FROM alerts WHERE id = ?').run(id);
+            await connection.query('DELETE FROM alerts WHERE id = ?', [id]);
             // 2. Check if product has other alerts
-            const otherAlerts = db_1.default.prepare('SELECT COUNT(*) as count FROM alerts WHERE productId = ?').get(productId);
-            if (otherAlerts.count === 0) {
+            const [otherAlertsResult] = await connection.query('SELECT COUNT(*) as count FROM alerts WHERE productid = ?', [productId]);
+            const otherAlertsCount = parseInt(otherAlertsResult[0].count, 10);
+            if (otherAlertsCount === 0) {
                 logger_1.logger.info(`Cleaning up orphaned product ID ${productId}`);
-                db_1.default.prepare('DELETE FROM products WHERE id = ?').run(productId);
+                await connection.query('DELETE FROM products WHERE id = ?', [productId]);
             }
-        });
-        deleteTx();
+            await connection.commit();
+        }
+        catch (txErr) {
+            await connection.rollback();
+            throw txErr;
+        }
+        finally {
+            connection.release();
+        }
         res.json({ message: 'Alert deleted successfully' });
     }
     catch (error) {

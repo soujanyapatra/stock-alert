@@ -15,7 +15,7 @@ const product_1 = __importDefault(require("./routes/product"));
 const scheduler_2 = __importDefault(require("./routes/scheduler"));
 const health_1 = __importDefault(require("./routes/health"));
 // Load environment variables
-dotenv_1.default.config();
+dotenv_1.default.config({ override: true });
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // Middleware
@@ -38,26 +38,40 @@ app.use((err, req, res, next) => {
     logger_1.logger.error('Unhandled request error:', err.message || err);
     res.status(500).json({ error: 'Internal Server Error' });
 });
-// Initialize Cron Scheduler
-(0, scheduler_1.initScheduler)();
-// Start Server
-const server = app.listen(PORT, () => {
-    logger_1.logger.info(`Stock Alert Backend running on port ${PORT}`);
+// Initialize and Start Server
+let server;
+db_1.default.initDb().then(() => {
+    // Initialize Cron Scheduler
+    (0, scheduler_1.initScheduler)();
+    server = app.listen(PORT, () => {
+        logger_1.logger.info(`Stock Alert Backend running on port ${PORT}`);
+    });
+}).catch((err) => {
+    logger_1.logger.error('Failed to initialize database on startup. Exiting...', err.message || err);
+    process.exit(1);
 });
 // Graceful Shutdown
 const handleShutdown = () => {
     logger_1.logger.info('Shutting down backend server...');
-    server.close(() => {
-        logger_1.logger.info('HTTP server closed.');
+    const closeDbAndExit = async () => {
         try {
-            db_1.default.close();
-            logger_1.logger.info('Database connection closed.');
+            await db_1.default.pool.end();
+            logger_1.logger.info('Database connection pool closed.');
         }
         catch (e) {
-            logger_1.logger.error('Error closing database:', e.message || e);
+            logger_1.logger.error('Error closing database pool:', e.message || e);
         }
         process.exit(0);
-    });
+    };
+    if (server) {
+        server.close(async () => {
+            logger_1.logger.info('HTTP server closed.');
+            await closeDbAndExit();
+        });
+    }
+    else {
+        closeDbAndExit();
+    }
 };
 process.on('SIGINT', handleShutdown);
 process.on('SIGTERM', handleShutdown);

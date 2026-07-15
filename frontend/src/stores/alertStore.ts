@@ -13,7 +13,7 @@ export const useAlertStore = defineStore('alertStore', {
     loading: false,
     error: null as string | null,
     toasts: [] as ToastMessage[],
-    refreshingIds: [] as number[], // alert IDs currently being refreshed
+    refreshingIds: [] as string[], // alert IDs currently being refreshed
     globalRefreshing: false,
   }),
 
@@ -111,7 +111,7 @@ export const useAlertStore = defineStore('alertStore', {
       }
     },
 
-    async toggleAlert(alertId: number, enabled: boolean) {
+    async toggleAlert(alertId: string, enabled: boolean) {
       try {
         const response = await fetch(`/api/alerts/${alertId}`, {
           method: 'PUT',
@@ -139,7 +139,7 @@ export const useAlertStore = defineStore('alertStore', {
       }
     },
 
-    async deleteAlert(alertId: number) {
+    async deleteAlert(alertId: string) {
       try {
         const response = await fetch(`/api/alerts/${alertId}`, {
           method: 'DELETE',
@@ -159,7 +159,7 @@ export const useAlertStore = defineStore('alertStore', {
       }
     },
 
-    async refreshAlert(alertId: number, productId: number) {
+    async refreshAlert(alertId: string, productId: string) {
       this.refreshingIds.push(alertId);
       try {
         const response = await fetch('/api/scheduler/run', {

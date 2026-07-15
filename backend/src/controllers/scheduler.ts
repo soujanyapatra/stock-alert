@@ -8,8 +8,7 @@ export const runScheduler = async (req: Request, res: Response) => {
   try {
     logger.info(productId ? `Manual trigger for product ID ${productId} check received.` : 'Manual trigger for scheduler run received.');
     
-    const parsedProductId = productId ? parseInt(productId, 10) : undefined;
-    const result = await runSchedulerCheck(isNaN(parsedProductId as number) ? undefined : parsedProductId);
+    const result = await runSchedulerCheck(productId ? String(productId) : undefined);
     
     res.json({
       message: 'Scheduler job run completed.',

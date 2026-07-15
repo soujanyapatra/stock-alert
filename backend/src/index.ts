@@ -13,7 +13,7 @@ import schedulerRoutes from './routes/scheduler';
 import healthRoutes from './routes/health';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ override: true });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,27 +42,42 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
-// Initialize Cron Scheduler
-initScheduler();
+// Initialize and Start Server
+let server: any;
 
-// Start Server
-const server = app.listen(PORT, () => {
-  logger.info(`Stock Alert Backend running on port ${PORT}`);
+db.initDb().then(() => {
+  // Initialize Cron Scheduler
+  initScheduler();
+
+  server = app.listen(PORT, () => {
+    logger.info(`Stock Alert Backend running on port ${PORT}`);
+  });
+}).catch((err) => {
+  logger.error('Failed to initialize database on startup. Exiting...', err.message || err);
+  process.exit(1);
 });
 
 // Graceful Shutdown
 const handleShutdown = () => {
   logger.info('Shutting down backend server...');
-  server.close(() => {
-    logger.info('HTTP server closed.');
+  const closeDbAndExit = async () => {
     try {
-      db.close();
-      logger.info('Database connection closed.');
+      await db.pool.end();
+      logger.info('Database connection pool closed.');
     } catch (e: any) {
-      logger.error('Error closing database:', e.message || e);
+      logger.error('Error closing database pool:', e.message || e);
     }
     process.exit(0);
-  });
+  };
+
+  if (server) {
+    server.close(async () => {
+      logger.info('HTTP server closed.');
+      await closeDbAndExit();
+    });
+  } else {
+    closeDbAndExit();
+  }
 };
 
 process.on('SIGINT', handleShutdown);

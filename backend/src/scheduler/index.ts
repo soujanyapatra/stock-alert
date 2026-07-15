@@ -1,8 +1,20 @@
 import cron from 'node-cron';
+import { randomUUID } from 'crypto';
 import db from '../database/db';
 import { providerRegistry } from '../providers/registry';
 import { logger } from '../utils/logger';
 import { Product, StockStatus } from '../../../shared/types';
+
+const formatProduct = (row: any): Product => ({
+  id: row.id,
+  asin: row.asin,
+  url: row.url,
+  name: row.name,
+  image: row.image,
+  currentPrice: Number(row.currentprice),
+  stockStatus: row.stockstatus,
+  lastChecked: row.lastchecked,
+});
 
 let isChecking = false;
 
@@ -10,7 +22,7 @@ let isChecking = false;
  * Runs a check on all active products.
  * An active product is one that has at least one enabled alert.
  */
-export async function runSchedulerCheck(productId?: number): Promise<{ processed: number; errors: number; changes: number }> {
+export async function runSchedulerCheck(productId?: string): Promise<{ processed: number; errors: number; changes: number }> {
   if (isChecking) {
     logger.warn('Scheduler check is already running. Skipping this cycle.');
     return { processed: 0, errors: 0, changes: 0 };
@@ -27,16 +39,17 @@ export async function runSchedulerCheck(productId?: number): Promise<{ processed
     // 1. Get products to check
     let activeProducts: Product[] = [];
     if (productId) {
-      const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as Product | undefined;
-      if (prod) {
-        activeProducts = [prod];
+      const prodResult = await db.query('SELECT * FROM products WHERE id = ?', [productId]);
+      if (prodResult.rows.length > 0) {
+        activeProducts = [formatProduct(prodResult.rows[0])];
       }
     } else {
-      activeProducts = db.prepare(`
+      const activeResult = await db.query(`
         SELECT DISTINCT p.* FROM products p
-        JOIN alerts a ON p.id = a.productId
+        JOIN alerts a ON p.id = a.productid
         WHERE a.enabled = 1
-      `).all() as Product[];
+      `);
+      activeProducts = activeResult.rows.map(formatProduct);
     }
 
     logger.info(`Found ${activeProducts.length} active products to check.`);
@@ -56,23 +69,32 @@ export async function runSchedulerCheck(productId?: number): Promise<{ processed
         const newStatus = result.stockStatus;
         const newPrice = result.currentPrice;
 
-        // Start transaction for DB updates
-        const updateTx = db.transaction(() => {
+        // Perform updates inside a MySQL transaction
+        const connection = await db.pool.getConnection();
+        try {
+          await connection.beginTransaction();
+          
           // Update product info
-          db.prepare(`
+          await connection.query(`
             UPDATE products 
-            SET currentPrice = ?, stockStatus = ?, lastChecked = ?, name = ?, image = ?
+            SET currentprice = ?, stockstatus = ?, lastchecked = ?, name = ?, image = ?
             WHERE id = ?
-          `).run(newPrice, newStatus, timestamp, result.name, result.image, product.id);
+          `, [newPrice, newStatus, timestamp, result.name, result.image, product.id]);
 
           // Add history entry
-          db.prepare(`
-            INSERT INTO history (productId, price, stockStatus, checkedAt)
-            VALUES (?, ?, ?, ?)
-          `).run(product.id, newPrice, newStatus, timestamp);
-        });
+          const historyId = randomUUID();
+          await connection.query(`
+            INSERT INTO history (id, productid, price, stockstatus, checkedat)
+            VALUES (?, ?, ?, ?, ?)
+          `, [historyId, product.id, newPrice, newStatus, timestamp]);
 
-        updateTx();
+          await connection.commit();
+        } catch (txErr) {
+          await connection.rollback();
+          throw txErr;
+        } finally {
+          connection.release();
+        }
 
         processedCount++;
 

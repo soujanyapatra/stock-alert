@@ -1,97 +1,90 @@
 <template>
   <Transition name="modal">
-    <div v-if="isOpen" class="fixed inset-0 z-40 overflow-y-auto flex items-center justify-center p-4">
+    <div v-if="isOpen" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <!-- Backdrop -->
-      <div class="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm transition-opacity" @click="close"></div>
+      <div class="absolute inset-0 bg-black/40 dark:bg-black/60" @click="close" />
 
-      <!-- Modal Card -->
-      <div class="glass relative rounded-2xl w-full max-w-lg shadow-2xl p-6 overflow-hidden transform transition-all duration-300 z-50 border border-slate-200 dark:border-slate-800">
-        <!-- Close Button -->
-        <button
-          @click="close"
-          class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
-          :disabled="submitting"
-        >
-          <XIcon class="h-6 w-6" />
-        </button>
+      <!-- Panel — bottom sheet on mobile, centered dialog on desktop -->
+      <div class="modal-panel relative w-full sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 sm:rounded-xl shadow-xl overflow-hidden z-10 rounded-t-2xl sm:rounded-t-xl">
 
-        <h3 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-          <PlusIcon class="h-6 w-6 text-primary-500" />
-          Track New Product
-        </h3>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Paste an Amazon product URL to monitor its stock status and price.
-        </p>
+        <!-- Handle (mobile sheet indicator) -->
+        <div class="sm:hidden flex justify-center pt-3 pb-1">
+          <div class="h-1 w-10 rounded-full bg-zinc-200 dark:bg-zinc-700"></div>
+        </div>
 
-        <form @submit.prevent="handleSubmit" class="mt-6 space-y-4">
-          <!-- URL Input -->
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
           <div>
-            <label for="url" class="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Amazon Product URL
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Track new product</h3>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Paste an Amazon product URL below</p>
+          </div>
+          <button @click="close" :disabled="submitting" class="btn-icon h-8 w-8 ml-3 shrink-0">
+            <XIcon class="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <!-- Form -->
+        <form @submit.prevent="handleSubmit" class="px-5 py-4 space-y-4">
+
+          <!-- URL field -->
+          <div class="space-y-1.5">
+            <label for="modal-url" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              Amazon URL
             </label>
-            <div class="mt-1.5 relative rounded-xl shadow-sm">
-              <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <LinkIcon class="h-5 w-5" />
-              </div>
+            <div class="relative">
+              <LinkIcon class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
               <input
-                type="text"
-                id="url"
+                id="modal-url"
                 v-model="url"
-                class="block w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all text-sm"
-                placeholder="https://www.amazon.com/dp/..."
+                type="url"
+                placeholder="https://www.amazon.com/dp/…"
+                class="input pl-9 h-10 text-sm"
                 required
                 :disabled="submitting"
+                autocomplete="off"
               />
             </div>
-            <p v-if="validationError" class="mt-1.5 text-xs text-rose-500 flex items-center gap-1">
-              <AlertTriangleIcon class="h-3.5 w-3.5" />
+            <p v-if="validationError" class="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+              <AlertCircleIcon class="h-3 w-3 shrink-0" />
               {{ validationError }}
             </p>
           </div>
 
-          <!-- Custom Name Input -->
-          <div>
-            <label for="customName" class="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Custom Name <span class="text-xs font-normal text-slate-400">(Optional)</span>
+          <!-- Custom name -->
+          <div class="space-y-1.5">
+            <label for="modal-name" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              Custom name <span class="text-zinc-400 font-normal">(optional)</span>
             </label>
             <input
-              type="text"
-              id="customName"
+              id="modal-name"
               v-model="customName"
-              class="mt-1.5 block w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all text-sm"
-              placeholder="e.g. My Favorite Headphones"
+              type="text"
+              placeholder="e.g. My headphones"
+              class="input h-10 text-sm"
               :disabled="submitting"
             />
           </div>
 
-          <!-- Progress / Scrape State -->
-          <div v-if="submitting" class="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl flex items-center gap-3 border border-slate-100 dark:border-slate-800/40">
-            <Loader2Icon class="h-5 w-5 animate-spin text-primary-500 flex-shrink-0" />
-            <div class="text-xs text-slate-500 dark:text-slate-400">
-              <p class="font-medium text-slate-700 dark:text-slate-300">Contacting Amazon Scraper...</p>
-              <p class="mt-0.5">This can take a few seconds as Playwright scrapes real-time details.</p>
+          <!-- Scraping progress -->
+          <div v-if="submitting" class="flex items-start gap-3 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-4 py-3">
+            <Loader2Icon class="h-4 w-4 animate-spin text-zinc-500 dark:text-zinc-400 shrink-0 mt-0.5" />
+            <div>
+              <p class="text-xs font-medium text-zinc-800 dark:text-zinc-200">Fetching product details…</p>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">This can take up to 15 seconds.</p>
             </div>
           </div>
 
           <!-- Actions -->
-          <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800/40 mt-6">
-            <button
-              type="button"
-              @click="close"
-              class="px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors text-sm font-semibold"
-              :disabled="submitting"
-            >
+          <div class="flex gap-2 pt-1">
+            <button type="button" @click="close" :disabled="submitting" class="btn-outline flex-1 justify-center h-10 text-xs">
               Cancel
             </button>
-            <button
-              type="submit"
-              class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-indigo-600 hover:from-primary-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 text-sm font-semibold flex items-center gap-2"
-              :disabled="submitting"
-            >
-              <Loader2Icon v-if="submitting" class="h-4 w-4 animate-spin" />
-              <span>{{ submitting ? 'Adding Alert...' : 'Add Alert' }}</span>
+            <button type="submit" :disabled="submitting" class="btn-primary flex-1 justify-center h-10 text-xs">
+              <Loader2Icon v-if="submitting" class="h-3.5 w-3.5 animate-spin" />
+              <span>{{ submitting ? 'Adding…' : 'Add Alert' }}</span>
             </button>
           </div>
+
         </form>
       </div>
     </div>
@@ -101,18 +94,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useAlertStore } from '../stores/alertStore';
-import { X as XIcon, Plus as PlusIcon, Link as LinkIcon, AlertTriangle as AlertTriangleIcon, Loader2 as Loader2Icon } from 'lucide-vue-next';
+import { X as XIcon, Link as LinkIcon, AlertCircle as AlertCircleIcon, Loader2 as Loader2Icon } from 'lucide-vue-next';
 
-const props = defineProps<{
-  isOpen: boolean;
-}>();
-
-const emit = defineEmits<{
-  (e: 'close'): void;
-}>();
+defineProps<{ isOpen: boolean }>();
+const emit = defineEmits<{ (e: 'close'): void }>();
 
 const store = useAlertStore();
-
 const url = ref('');
 const customName = ref('');
 const validationError = ref('');
@@ -126,49 +113,18 @@ const close = () => {
   emit('close');
 };
 
-const validateAmazonUrl = (inputUrl: string): boolean => {
-  try {
-    const parsed = new URL(inputUrl);
-    return parsed.hostname.includes('amazon.');
-  } catch {
-    return false;
-  }
-};
-
 const handleSubmit = async () => {
   validationError.value = '';
-  
-  if (!validateAmazonUrl(url.value)) {
-    validationError.value = 'Please enter a valid Amazon URL (e.g. amazon.com, amazon.in, amazon.co.uk)';
+  try {
+    new URL(url.value);
+    if (!url.value.includes('amazon.')) throw new Error();
+  } catch {
+    validationError.value = 'Enter a valid Amazon product URL';
     return;
   }
-
   submitting.value = true;
-  const success = await store.createAlert(url.value, customName.value);
+  const ok = await store.createAlert(url.value, customName.value);
   submitting.value = false;
-
-  if (success) {
-    close();
-  }
+  if (ok) close();
 };
 </script>
-
-<style scoped>
-.modal-enter-from {
-  opacity: 0;
-}
-.modal-leave-to {
-  opacity: 0;
-}
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.modal-enter-from .glass {
-  transform: scale(0.95);
-}
-.modal-leave-to .glass {
-  transform: scale(0.95);
-}
-</style>

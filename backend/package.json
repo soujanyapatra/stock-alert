@@ -7,18 +7,19 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/backend/src/index.js",
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npx playwright install chromium",
+    "db:setup": "ts-node src/database/setup-db.ts",
+    "db:reset": "ts-node src/database/setup-db.ts --reset"
   },
   "dependencies": {
-    "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "mysql2": "^3.23.0",
     "node-cron": "^3.0.3",
     "playwright": "^1.44.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.12.7",

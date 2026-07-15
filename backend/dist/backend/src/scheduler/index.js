@@ -6,9 +6,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runSchedulerCheck = runSchedulerCheck;
 exports.initScheduler = initScheduler;
 const node_cron_1 = __importDefault(require("node-cron"));
+const crypto_1 = require("crypto");
 const db_1 = __importDefault(require("../database/db"));
 const registry_1 = require("../providers/registry");
 const logger_1 = require("../utils/logger");
+const formatProduct = (row) => ({
+    id: row.id,
+    asin: row.asin,
+    url: row.url,
+    name: row.name,
+    image: row.image,
+    currentPrice: Number(row.currentprice),
+    stockStatus: row.stockstatus,
+    lastChecked: row.lastchecked,
+});
 let isChecking = false;
 /**
  * Runs a check on all active products.
@@ -28,17 +39,18 @@ async function runSchedulerCheck(productId) {
         // 1. Get products to check
         let activeProducts = [];
         if (productId) {
-            const prod = db_1.default.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-            if (prod) {
-                activeProducts = [prod];
+            const prodResult = await db_1.default.query('SELECT * FROM products WHERE id = ?', [productId]);
+            if (prodResult.rows.length > 0) {
+                activeProducts = [formatProduct(prodResult.rows[0])];
             }
         }
         else {
-            activeProducts = db_1.default.prepare(`
+            const activeResult = await db_1.default.query(`
         SELECT DISTINCT p.* FROM products p
-        JOIN alerts a ON p.id = a.productId
+        JOIN alerts a ON p.id = a.productid
         WHERE a.enabled = 1
-      `).all();
+      `);
+            activeProducts = activeResult.rows.map(formatProduct);
         }
         logger_1.logger.info(`Found ${activeProducts.length} active products to check.`);
         for (const product of activeProducts) {
@@ -53,21 +65,31 @@ async function runSchedulerCheck(productId) {
                 const oldStatus = product.stockStatus;
                 const newStatus = result.stockStatus;
                 const newPrice = result.currentPrice;
-                // Start transaction for DB updates
-                const updateTx = db_1.default.transaction(() => {
+                // Perform updates inside a MySQL transaction
+                const connection = await db_1.default.pool.getConnection();
+                try {
+                    await connection.beginTransaction();
                     // Update product info
-                    db_1.default.prepare(`
+                    await connection.query(`
             UPDATE products 
-            SET currentPrice = ?, stockStatus = ?, lastChecked = ?, name = ?, image = ?
+            SET currentprice = ?, stockstatus = ?, lastchecked = ?, name = ?, image = ?
             WHERE id = ?
-          `).run(newPrice, newStatus, timestamp, result.name, result.image, product.id);
+          `, [newPrice, newStatus, timestamp, result.name, result.image, product.id]);
                     // Add history entry
-                    db_1.default.prepare(`
-            INSERT INTO history (productId, price, stockStatus, checkedAt)
-            VALUES (?, ?, ?, ?)
-          `).run(product.id, newPrice, newStatus, timestamp);
-                });
-                updateTx();
+                    const historyId = (0, crypto_1.randomUUID)();
+                    await connection.query(`
+            INSERT INTO history (id, productid, price, stockstatus, checkedat)
+            VALUES (?, ?, ?, ?, ?)
+          `, [historyId, product.id, newPrice, newStatus, timestamp]);
+                    await connection.commit();
+                }
+                catch (txErr) {
+                    await connection.rollback();
+                    throw txErr;
+                }
+                finally {
+                    connection.release();
+                }
                 processedCount++;
                 if (oldStatus !== newStatus) {
                     changeCount++;

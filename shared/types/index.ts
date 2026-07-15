@@ -1,7 +1,7 @@
 export type StockStatus = 'in_stock' | 'out_of_stock' | 'unknown';
 
 export interface Product {
-  id: number;
+  id: string;
   asin: string;
   url: string;
   name: string;
@@ -12,8 +12,8 @@ export interface Product {
 }
 
 export interface Alert {
-  id: number;
-  productId: number;
+  id: string;
+  productId: string;
   customName?: string;
   enabled: boolean; // stored as 0 or 1 in DB, converted to boolean in API
   createdAt: string; // ISO date string
@@ -21,8 +21,8 @@ export interface Alert {
 }
 
 export interface HistoryEntry {
-  id: number;
-  productId: number;
+  id: string;
+  productId: string;
   price: number;
   stockStatus: StockStatus;
   checkedAt: string; // ISO date string

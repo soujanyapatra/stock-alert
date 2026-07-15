@@ -1,58 +1,75 @@
-import Database from 'better-sqlite3';
+import mysql from 'mysql2/promise';
 import path from 'path';
 import fs from 'fs';
+import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 
-const dbDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+// Load environment variables
+dotenv.config({ override: true });
 
-const dbPath = path.join(dbDir, 'database.sqlite');
-logger.info(`Initializing database at ${dbPath}`);
+logger.info(`Connecting to MySQL database: host=${process.env.DB_HOST}, port=${process.env.DB_PORT}, db=${process.env.DB_NAME}, user=${process.env.DB_USER}`);
 
-const db = new Database(dbPath);
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306', 10),
+  database: process.env.DB_NAME || 'stock_alert',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || 'password',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
 
-// Enable foreign keys
-db.pragma('foreign_keys = ON');
+export const query = async (text: string, params?: any[]): Promise<any> => {
+  const [rows] = await pool.query(text, params);
+  return { rows };
+};
 
-// Initialize database schema
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asin TEXT UNIQUE NOT NULL,
-    url TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    image TEXT NOT NULL,
-    currentPrice REAL NOT NULL,
-    stockStatus TEXT NOT NULL,
-    lastChecked TEXT NOT NULL
-  );
+export const initDb = async () => {
+  const dbName = process.env.DB_NAME || 'stock_alert';
 
-  CREATE TABLE IF NOT EXISTS alerts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    productId INTEGER NOT NULL,
-    customName TEXT,
-    enabled INTEGER NOT NULL DEFAULT 1, -- 0 or 1
-    createdAt TEXT NOT NULL,
-    FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE
-  );
+  // Ensure target database exists by connecting to MySQL without selecting a database first
+  const adminConnection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306', 10),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'password',
+  });
 
-  CREATE TABLE IF NOT EXISTS history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    productId INTEGER NOT NULL,
-    price REAL NOT NULL,
-    stockStatus TEXT NOT NULL,
-    checkedAt TEXT NOT NULL,
-    FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE
-  );
+  try {
+    logger.info(`Verifying/creating database "${dbName}"...`);
+    await adminConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+    logger.info(`Database "${dbName}" verified/created successfully.`);
+  } catch (err: any) {
+    logger.warn(`Could not verify/create database on startup: ${err.message || err}`);
+  } finally {
+    await adminConnection.end();
+  }
 
-  -- Indexes for performance
-  CREATE INDEX IF NOT EXISTS idx_products_asin ON products(asin);
-  CREATE INDEX IF NOT EXISTS idx_alerts_product ON alerts(productId);
-  CREATE INDEX IF NOT EXISTS idx_history_product ON history(productId);
-`);
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  logger.info(`Reading schema SQL from: ${schemaPath}`);
+  try {
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    
+    // Split the schemaSql by ';' and run statements individually for compatibility
+    const statements = schemaSql
+      .split(';')
+      .map(stmt => stmt.trim())
+      .filter(stmt => stmt.length > 0);
 
-logger.info('Database schema verified.');
+    for (const statement of statements) {
+      await pool.query(statement);
+    }
 
-export default db;
+    logger.info('MySQL schema initialized successfully.');
+  } catch (err: any) {
+    logger.error(`Failed to initialize database schema: ${err.message || err}`);
+    throw err;
+  }
+};
+
+export default {
+  query,
+  pool,
+  initDb,
+};
