@@ -26,45 +26,58 @@ export const query = async (text: string, params?: any[]): Promise<any> => {
 };
 
 export const initDb = async () => {
-  const dbName = process.env.DB_NAME || 'stock_alert';
+  const maxRetries = 10;
+  const retryDelay = 3000; // 3 seconds
+  let attempts = 0;
 
-  // Ensure target database exists by connecting to MySQL without selecting a database first
-  const adminConnection = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306', 10),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'password',
-  });
+  while (attempts < maxRetries) {
+    try {
+      const dbName = process.env.DB_NAME || 'stock_alert';
 
-  try {
-    logger.info(`Verifying/creating database "${dbName}"...`);
-    await adminConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
-    logger.info(`Database "${dbName}" verified/created successfully.`);
-  } catch (err: any) {
-    logger.warn(`Could not verify/create database on startup: ${err.message || err}`);
-  } finally {
-    await adminConnection.end();
-  }
+      // Ensure target database exists by connecting to MySQL without selecting a database first
+      const adminConnection = await mysql.createConnection({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '3306', 10),
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || 'password',
+      });
 
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  logger.info(`Reading schema SQL from: ${schemaPath}`);
-  try {
-    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-    
-    // Split the schemaSql by ';' and run statements individually for compatibility
-    const statements = schemaSql
-      .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0);
+      try {
+        logger.info(`Verifying/creating database "${dbName}"...`);
+        await adminConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+        logger.info(`Database "${dbName}" verified/created successfully.`);
+      } catch (err: any) {
+        logger.warn(`Could not verify/create database on startup: ${err.message || err}`);
+      } finally {
+        await adminConnection.end();
+      }
 
-    for (const statement of statements) {
-      await pool.query(statement);
+      const schemaPath = path.join(__dirname, 'schema.sql');
+      logger.info(`Reading schema SQL from: ${schemaPath}`);
+      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+      
+      // Split the schemaSql by ';' and run statements individually for compatibility
+      const statements = schemaSql
+        .split(';')
+        .map(stmt => stmt.trim())
+        .filter(stmt => stmt.length > 0);
+
+      for (const statement of statements) {
+        await pool.query(statement);
+      }
+
+      logger.info('MySQL schema initialized successfully.');
+      return; // Success, exit the retry loop
+    } catch (err: any) {
+      attempts++;
+      logger.warn(`Database connection/init attempt ${attempts}/${maxRetries} failed: ${err.message || err}`);
+      if (attempts >= maxRetries) {
+        logger.error(`Database initialization failed after ${maxRetries} attempts.`);
+        throw err;
+      }
+      logger.info(`Waiting ${retryDelay / 1000} seconds before retrying...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
-
-    logger.info('MySQL schema initialized successfully.');
-  } catch (err: any) {
-    logger.error(`Failed to initialize database schema: ${err.message || err}`);
-    throw err;
   }
 };
 
