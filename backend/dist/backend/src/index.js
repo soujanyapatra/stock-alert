@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
 const logger_1 = require("./utils/logger");
 const db_1 = __importDefault(require("./database/db"));
 const scheduler_1 = require("./scheduler");
@@ -19,20 +20,30 @@ dotenv_1.default.config({ override: true });
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // Middleware
+const isProduction = process.env.NODE_ENV === 'production';
 app.use((0, cors_1.default)({
-    origin: '*', // For development, allow all origins
+    origin: isProduction ? false : '*', // In production, same origin — no CORS needed
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
-// Serve static frontend assets in production (optional, future-proofing)
-// app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+// Serve built frontend in production
+if (isProduction) {
+    const frontendDist = path_1.default.join(__dirname, '../../../frontend/dist');
+    app.use(express_1.default.static(frontendDist));
+}
 // Routes
 app.use('/api/alerts', alert_1.default);
 app.use('/api/products', product_1.default);
 app.use('/api/scheduler', scheduler_2.default);
 app.use('/api/health', health_1.default);
+// SPA fallback — all non-API routes serve index.html for Vue Router
+if (isProduction) {
+    app.get(/^(?!\/api).*/, (_req, res) => {
+        res.sendFile(path_1.default.join(__dirname, '../../../frontend/dist/index.html'));
+    });
+}
 // Global Error Handler
 app.use((err, req, res, next) => {
     logger_1.logger.error('Unhandled request error:', err.message || err);

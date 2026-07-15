@@ -19,22 +19,34 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(cors({
-  origin: '*', // For development, allow all origins
+  origin: isProduction ? false : '*', // In production, same origin — no CORS needed
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static frontend assets in production (optional, future-proofing)
-// app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+// Serve built frontend in production
+if (isProduction) {
+  const frontendDist = path.join(__dirname, '../../../frontend/dist');
+  app.use(express.static(frontendDist));
+}
 
 // Routes
 app.use('/api/alerts', alertRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/scheduler', schedulerRoutes);
 app.use('/api/health', healthRoutes);
+
+// SPA fallback — all non-API routes serve index.html for Vue Router
+if (isProduction) {
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(__dirname, '../../../frontend/dist/index.html'));
+  });
+}
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
