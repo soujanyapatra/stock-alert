@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
 const logger_1 = require("./utils/logger");
 const db_1 = __importDefault(require("./database/db"));
 const scheduler_1 = require("./scheduler");
@@ -29,9 +30,26 @@ app.use((0, cors_1.default)({
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Serve built frontend in production
+let frontendDist = '';
 if (isProduction) {
-    const frontendDist = path_1.default.join(__dirname, '../../../frontend/dist');
-    app.use(express_1.default.static(frontendDist));
+    // Check typical production Docker layout relative path first, then local build dev layout path
+    const pathsToTry = [
+        path_1.default.join(__dirname, '../../../../frontend/dist'),
+        path_1.default.join(__dirname, '../../../frontend/dist'),
+        path_1.default.join(__dirname, '../../frontend/dist')
+    ];
+    for (const p of pathsToTry) {
+        if (fs_1.default.existsSync(p)) {
+            frontendDist = p;
+            break;
+        }
+    }
+    if (frontendDist) {
+        app.use(express_1.default.static(frontendDist));
+    }
+    else {
+        logger_1.logger.warn('Could not locate frontend dist directory for static serving.');
+    }
 }
 // Routes
 app.use('/api/alerts', alert_1.default);
@@ -39,9 +57,9 @@ app.use('/api/products', product_1.default);
 app.use('/api/scheduler', scheduler_2.default);
 app.use('/api/health', health_1.default);
 // SPA fallback — all non-API routes serve index.html for Vue Router
-if (isProduction) {
+if (isProduction && frontendDist) {
     app.get(/^(?!\/api).*/, (_req, res) => {
-        res.sendFile(path_1.default.join(__dirname, '../../../frontend/dist/index.html'));
+        res.sendFile(path_1.default.join(frontendDist, 'index.html'));
     });
 }
 // Global Error Handler

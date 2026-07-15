@@ -28,42 +28,54 @@ const query = async (text, params) => {
 };
 exports.query = query;
 const initDb = async () => {
-    const dbName = process.env.DB_NAME || 'stock_alert';
-    // Ensure target database exists by connecting to MySQL without selecting a database first
-    const adminConnection = await promise_1.default.createConnection({
-        host: process.env.DB_HOST || 'localhost',
-        port: parseInt(process.env.DB_PORT || '3306', 10),
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || 'password',
-    });
-    try {
-        logger_1.logger.info(`Verifying/creating database "${dbName}"...`);
-        await adminConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
-        logger_1.logger.info(`Database "${dbName}" verified/created successfully.`);
-    }
-    catch (err) {
-        logger_1.logger.warn(`Could not verify/create database on startup: ${err.message || err}`);
-    }
-    finally {
-        await adminConnection.end();
-    }
-    const schemaPath = path_1.default.join(__dirname, 'schema.sql');
-    logger_1.logger.info(`Reading schema SQL from: ${schemaPath}`);
-    try {
-        const schemaSql = fs_1.default.readFileSync(schemaPath, 'utf8');
-        // Split the schemaSql by ';' and run statements individually for compatibility
-        const statements = schemaSql
-            .split(';')
-            .map(stmt => stmt.trim())
-            .filter(stmt => stmt.length > 0);
-        for (const statement of statements) {
-            await pool.query(statement);
+    const maxRetries = 10;
+    const retryDelay = 3000; // 3 seconds
+    let attempts = 0;
+    while (attempts < maxRetries) {
+        try {
+            const dbName = process.env.DB_NAME || 'stock_alert';
+            // Ensure target database exists by connecting to MySQL without selecting a database first
+            const adminConnection = await promise_1.default.createConnection({
+                host: process.env.DB_HOST || 'localhost',
+                port: parseInt(process.env.DB_PORT || '3306', 10),
+                user: process.env.DB_USER || 'root',
+                password: process.env.DB_PASSWORD || 'password',
+            });
+            try {
+                logger_1.logger.info(`Verifying/creating database "${dbName}"...`);
+                await adminConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+                logger_1.logger.info(`Database "${dbName}" verified/created successfully.`);
+            }
+            catch (err) {
+                logger_1.logger.warn(`Could not verify/create database on startup: ${err.message || err}`);
+            }
+            finally {
+                await adminConnection.end();
+            }
+            const schemaPath = path_1.default.join(__dirname, 'schema.sql');
+            logger_1.logger.info(`Reading schema SQL from: ${schemaPath}`);
+            const schemaSql = fs_1.default.readFileSync(schemaPath, 'utf8');
+            // Split the schemaSql by ';' and run statements individually for compatibility
+            const statements = schemaSql
+                .split(';')
+                .map(stmt => stmt.trim())
+                .filter(stmt => stmt.length > 0);
+            for (const statement of statements) {
+                await pool.query(statement);
+            }
+            logger_1.logger.info('MySQL schema initialized successfully.');
+            return; // Success, exit the retry loop
         }
-        logger_1.logger.info('MySQL schema initialized successfully.');
-    }
-    catch (err) {
-        logger_1.logger.error(`Failed to initialize database schema: ${err.message || err}`);
-        throw err;
+        catch (err) {
+            attempts++;
+            logger_1.logger.warn(`Database connection/init attempt ${attempts}/${maxRetries} failed: ${err.message || err}`);
+            if (attempts >= maxRetries) {
+                logger_1.logger.error(`Database initialization failed after ${maxRetries} attempts.`);
+                throw err;
+            }
+            logger_1.logger.info(`Waiting ${retryDelay / 1000} seconds before retrying...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
     }
 };
 exports.initDb = initDb;
