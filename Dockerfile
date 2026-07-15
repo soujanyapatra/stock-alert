@@ -23,7 +23,7 @@ RUN npm install
 
 COPY backend/ ./
 COPY shared/ /app/shared/
-RUN npm run build
+RUN npm run build && cp src/database/schema.sql dist/backend/src/database/schema.sql
 
 
 # ── Stage 3: Production image ────────────────────────────────────────
