@@ -1,11 +1,7 @@
 [build]
-# Railway runs this from the repo root
-# We build from the backend directory which also builds frontend
-builder = "nixpacks"
-buildCommand = "cd backend && npm install && npm run build"
+builder = "docker"
 
 [deploy]
-startCommand = "cd backend && npm run start"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"

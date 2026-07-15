@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { logger } from './utils/logger';
 import db from './database/db';
 import { initScheduler } from './scheduler';
@@ -30,9 +31,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve built frontend in production
+let frontendDist = '';
 if (isProduction) {
-  const frontendDist = path.join(__dirname, '../../../frontend/dist');
-  app.use(express.static(frontendDist));
+  // Check typical production Docker layout relative path first, then local build dev layout path
+  const pathsToTry = [
+    path.join(__dirname, '../../../../frontend/dist'),
+    path.join(__dirname, '../../../frontend/dist'),
+    path.join(__dirname, '../../frontend/dist')
+  ];
+  for (const p of pathsToTry) {
+    if (fs.existsSync(p)) {
+      frontendDist = p;
+      break;
+    }
+  }
+  if (frontendDist) {
+    app.use(express.static(frontendDist));
+  } else {
+    logger.warn('Could not locate frontend dist directory for static serving.');
+  }
 }
 
 // Routes
@@ -42,9 +59,9 @@ app.use('/api/scheduler', schedulerRoutes);
 app.use('/api/health', healthRoutes);
 
 // SPA fallback — all non-API routes serve index.html for Vue Router
-if (isProduction) {
+if (isProduction && frontendDist) {
   app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(__dirname, '../../../frontend/dist/index.html'));
+    res.sendFile(path.join(frontendDist, 'index.html'));
   });
 }
 
