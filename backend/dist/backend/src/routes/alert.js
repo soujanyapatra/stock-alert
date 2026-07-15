@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const alert_1 = require("../controllers/alert");
+const router = (0, express_1.Router)();
+router.get('/', alert_1.getAlerts);
+router.post('/', alert_1.createAlert);
+router.put('/:id', alert_1.updateAlert);
+router.delete('/:id', alert_1.deleteAlert);
+exports.default = router;

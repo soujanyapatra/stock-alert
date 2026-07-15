@@ -1,0 +1,63 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const logger_1 = require("./utils/logger");
+const db_1 = __importDefault(require("./database/db"));
+const scheduler_1 = require("./scheduler");
+// Import routes
+const alert_1 = __importDefault(require("./routes/alert"));
+const product_1 = __importDefault(require("./routes/product"));
+const scheduler_2 = __importDefault(require("./routes/scheduler"));
+const health_1 = __importDefault(require("./routes/health"));
+// Load environment variables
+dotenv_1.default.config();
+const app = (0, express_1.default)();
+const PORT = process.env.PORT || 3000;
+// Middleware
+app.use((0, cors_1.default)({
+    origin: '*', // For development, allow all origins
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express_1.default.json());
+app.use(express_1.default.urlencoded({ extended: true }));
+// Serve static frontend assets in production (optional, future-proofing)
+// app.use(express.static(path.join(__dirname, '../../frontend/dist')));
+// Routes
+app.use('/api/alerts', alert_1.default);
+app.use('/api/products', product_1.default);
+app.use('/api/scheduler', scheduler_2.default);
+app.use('/api/health', health_1.default);
+// Global Error Handler
+app.use((err, req, res, next) => {
+    logger_1.logger.error('Unhandled request error:', err.message || err);
+    res.status(500).json({ error: 'Internal Server Error' });
+});
+// Initialize Cron Scheduler
+(0, scheduler_1.initScheduler)();
+// Start Server
+const server = app.listen(PORT, () => {
+    logger_1.logger.info(`Stock Alert Backend running on port ${PORT}`);
+});
+// Graceful Shutdown
+const handleShutdown = () => {
+    logger_1.logger.info('Shutting down backend server...');
+    server.close(() => {
+        logger_1.logger.info('HTTP server closed.');
+        try {
+            db_1.default.close();
+            logger_1.logger.info('Database connection closed.');
+        }
+        catch (e) {
+            logger_1.logger.error('Error closing database:', e.message || e);
+        }
+        process.exit(0);
+    });
+};
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);

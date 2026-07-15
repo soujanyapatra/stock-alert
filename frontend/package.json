@@ -1,0 +1,29 @@
+{
+  "name": "stock-alert-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^0.395.0",
+    "pinia": "^2.2.2",
+    "vue": "^3.5.39",
+    "vue-router": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/tsconfig": "^0.9.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "~6.0.2",
+    "vite": "^5.2.11",
+    "vite-plugin-pwa": "^0.20.0",
+    "vue-tsc": "^3.3.5"
+  }
+}
